@@ -1,0 +1,50 @@
+# ============================================
+# 腾讯云 TokenPlan 监控配置文件
+# ============================================
+
+# 腾讯云 API 凭证
+# 获取方式：https://console.cloud.tencent.com/cam/capi
+tencent_cloud:
+  secret_id: "your-secret-id"
+  secret_key: "your-secret-key"
+  region: "ap-guangzhou"          # 地域，如 ap-guangzhou / ap-beijing / ap-shanghai
+
+# 企业微信群机器人 Webhook
+# 获取方式：企微群 → 右上角群设置 → 群机器人 → 添加机器人 → 复制 Webhook 地址
+wecom_webhook: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-bot-key"
+
+# 监控阈值配置（按使用率百分比，从高到低匹配）
+# 当套餐额度使用率达到对应阈值时触发告警
+# 同一套餐在同一个告警冷却周期内只会触发一次最高级别的告警
+thresholds:
+  - level: "critical"        # 严重告警
+    usage_percent: 90        # 使用率 >= 95%
+    message: "额度使用率>=90%，请立即处理！"
+  - level: "warning"         # 警告
+    usage_percent: 80        # 使用率 >= 80%
+    message: "额度使用率>=80%，请关注。"
+#  - level: "notice"          # 提醒
+#    usage_percent: 50        # 使用率 >= 50%
+#    message: "额度使用过半，请注意。"
+
+# 告警冷却时间（分钟）
+# 同一套餐在冷却时间内达到同一告警级别，不会重复发送
+alert_cooldown_minutes: 60
+
+# 是否对已耗尽额度的套餐（StopReason=EXHAUSTED）发送告警
+alert_on_exhausted: true
+
+# 检测周期配置
+schedule:
+  # cron 表达式，以下示例为每 30 分钟执行一次
+  # 分钟  小时  日  月  周
+  cron: "*/30 * * * *"
+  # 也可以用 interval 方式（二选一，cron 优先）
+  # interval_minutes: 30
+
+# 日志配置
+logging:
+  level: "INFO"               # DEBUG / INFO / WARNING / ERROR
+  file: "logs/monitor.log"    # 日志文件路径，留空则不写文件
+  max_size_mb: 10             # 单个日志文件最大大小
+  backup_count: 5             # 保留日志文件数量

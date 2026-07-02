@@ -1,0 +1,4 @@
+tencentcloud-sdk-python>=3.0.1000
+APScheduler>=3.10.0
+PyYAML>=6.0
+requests>=2.28.0
