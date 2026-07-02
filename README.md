@@ -1,5 +1,12 @@
 # 腾讯云 TokenPlan 额度监控程序
 
+![Docker Build](https://img.shields.io/github/actions/workflow/status/nmgliangwei/qcloud-tokenhub-monitor/docker-publish.yml?logo=github&label=docker%20build)
+![Docker Image Version](https://img.shields.io/github/v/tag/nmgliangwei/qcloud-tokenhub-monitor?logo=docker&label=docker&sort=semver)
+![Docker Pulls](https://img.shields.io/badge/ghcr.io-nmgliangwei%2Fqcloud--tokenhub--monitor-blue?logo=docker)
+![Python Version](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-linux%2Famd64%20%7C%20arm64-green?logo=linux)
+![License](https://img.shields.io/github/license/nmgliangwei/qcloud-tokenhub-monitor?logo=opensourceinitiative)
+
 周期性检测腾讯云 TokenHub 所有套餐额度使用情况，当使用率达到设定阈值时，通过企业微信群机器人自动发送告警通知。
 
 ## 功能特性
