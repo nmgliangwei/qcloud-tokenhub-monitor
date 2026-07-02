@@ -226,7 +226,7 @@ def main():
     parser.add_argument(
         "-c", "--config",
         default=default_config,
-        help="配置文件路径 (默认: config/config.yaml)",
+        help="配置文件路径 (默认: <项目根目录>/config/config.yaml)",
     )
     parser.add_argument(
         "--once",
