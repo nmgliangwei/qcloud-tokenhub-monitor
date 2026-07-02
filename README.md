@@ -200,7 +200,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=your-user
+User=root
 WorkingDirectory=/path/to/qcloud-tokenhub-monitor/src
 ExecStart=/usr/bin/python3 main.py
 Restart=always
@@ -220,6 +220,7 @@ sudo systemctl start qcloud-tokenhub-monitor
 ### 使用镜像
 ```
 docker run -d --name qcloud-tokenhub-monitor \
+  --restart unless-stopped \
   -v $(pwd)/config:/app/config \
   -v $(pwd)/logs:/app/logs \
   registry.cn-beijing.aliyuncs.com/56/qcloud-tokenhub-monitor:latest
@@ -231,6 +232,7 @@ docker run -d --name qcloud-tokenhub-monitor \
 docker build -t qcloud-tokenhub-monitor .
 #启动
 docker run -d --name qcloud-tokenhub-monitor \
+  --restart unless-stopped \
   -v $(pwd)/config:/app/config \
   -v $(pwd)/logs:/app/logs \
   qcloud-tokenhub-monitor
