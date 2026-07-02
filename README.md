@@ -234,6 +234,7 @@ sudo systemctl start qcloud-tokenhub-monitor
 ```
 docker run -d --name qcloud-tokenhub-monitor \
   --restart unless-stopped \
+  -e TZ=Asia/Shanghai \
   -v $(pwd)/config:/app/config \
   -v $(pwd)/logs:/app/logs \
   ghcr.io/nmgliangwei/qcloud-tokenhub-monitor:latest
