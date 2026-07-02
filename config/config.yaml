@@ -45,6 +45,6 @@ schedule:
 # 日志配置
 logging:
   level: "INFO"               # DEBUG / INFO / WARNING / ERROR
-  file: "logs/monitor.log"    # 日志文件路径，留空则不写文件
+  file: "/app/logs/monitor.log"    # 日志文件路径，留空则不写文件
   max_size_mb: 10             # 单个日志文件最大大小
   backup_count: 5             # 保留日志文件数量
