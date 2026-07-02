@@ -218,10 +218,14 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
 
 def main():
+    # 默认配置路径基于项目根目录（src 的上一级）
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    default_config = os.path.join(project_root, "config", "config.yaml")
+
     parser = argparse.ArgumentParser(description="腾讯云 TokenPlan 额度监控程序")
     parser.add_argument(
         "-c", "--config",
-        default="config/config.yaml",
+        default=default_config,
         help="配置文件路径 (默认: config/config.yaml)",
     )
     parser.add_argument(
