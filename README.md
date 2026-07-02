@@ -217,13 +217,26 @@ sudo systemctl start qcloud-tokenhub-monitor
 ```
 
 ### Docker启动
-### 使用镜像
+
+镜像地址：`ghcr.io/nmgliangwei/qcloud-tokenhub-monitor`
+
+#### 镜像 Tag 说明
+
+| Tag | 说明 | 触发条件 |
+|-----|------|----------|
+| `dev` | 开发版，包含最新代码 | 推送到 `main` 分支时自动构建 |
+| `v*` (如 `v1.0.0`) | 正式发布版，与 Git Tag 一一对应 | 打 `v*` 开头的 Tag 时构建 |
+| `latest` | 最新正式发布版 | 打 `v*` 开头的 Tag 时自动指向该版本 |
+
+**推荐使用 `latest` tag**，它始终指向最新的正式发布版本，稳定性有保障。如果需要体验最新功能，可以使用 `dev` tag。
+
+#### 使用镜像(镜像 tag 自行替换)
 ```
 docker run -d --name qcloud-tokenhub-monitor \
   --restart unless-stopped \
   -v $(pwd)/config:/app/config \
   -v $(pwd)/logs:/app/logs \
-  registry.cn-beijing.aliyuncs.com/56/qcloud-tokenhub-monitor:latest
+  ghcr.io/nmgliangwei/qcloud-tokenhub-monitor:latest
 ```
 
 ## 自行打包
