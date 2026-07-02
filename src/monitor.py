@@ -101,8 +101,13 @@ class QuotaMonitor:
 
         total_quota = _to_float(package_info.get("TotalQuota"))
         total_used = _to_float(package_info.get("TotalUsed"))
-        remaining = total_quota - total_used
-        usage_percent = (total_used / total_quota * 100) if total_quota > 0 else 0.0
+        cycle_quota = _to_float(package_info.get("CycleQuota"))
+
+        # 使用当期额度(CycleQuota)计算使用率，与控制台显示一致
+        # 当期额度为 0 时回退到总额度
+        quota_base = cycle_quota if cycle_quota > 0 else total_quota
+        remaining = quota_base - total_used
+        usage_percent = (total_used / quota_base * 100) if quota_base > 0 else 0.0
 
         return PlanUsageInfo(
             team_id=plan_detail.get("TeamId", ""),

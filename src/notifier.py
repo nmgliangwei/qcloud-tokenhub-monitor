@@ -143,7 +143,7 @@ class WeComBot:
             ),
             f"",
             f"**额度使用情况**:",
-            f"- 总额度: {_fmt_num(plan.total_quota)} {plan.unit}",
+            f"- 当期额度: {_fmt_num(plan.cycle_quota)} {plan.unit}",
             f"- 已使用: {_fmt_num(plan.total_used)} {plan.unit}",
             f"- 剩余: <font color=\"warning\">{_fmt_num(plan.remaining)}</font> {plan.unit}",
             f"- 使用率: <font color=\"warning\">{plan.usage_percent:.1f}%</font>",
@@ -152,7 +152,6 @@ class WeComBot:
 
         if plan.cycle_quota > 0:
             lines.append(f"**周期信息**:")
-            lines.append(f"- 当期额度: {_fmt_num(plan.cycle_quota)} {plan.unit}")
             lines.append(f"- 当前周期: {plan.current_cycle}")
             lines.append(f"- 剩余周期: {plan.remain_cycles}")
             lines.append("")
@@ -200,7 +199,7 @@ class WeComBot:
                 f"| 级别: {alert.level}"
             )
             lines.append(
-                f"  > 已用 {plan.total_used:.0f} / 总额 {plan.total_quota:.0f} {plan.unit}"
+                f"  > 已用 {plan.total_used:.0f} / 当期 {plan.cycle_quota:.0f} {plan.unit}"
             )
             lines.append("")
 
