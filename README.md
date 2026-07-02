@@ -191,7 +191,7 @@ schedule:
 
 ### systemd 服务
 
-创建 `/etc/systemd/system/qcloud-monitor.service`：
+创建 `/etc/systemd/system/qcloud-tokenhub-monitor.service`：
 
 ```ini
 [Unit]
@@ -201,7 +201,7 @@ After=network.target
 [Service]
 Type=simple
 User=your-user
-WorkingDirectory=/path/to/qcloud-monitor/src
+WorkingDirectory=/path/to/qcloud-tokenhub-monitor/src
 ExecStart=/usr/bin/python3 main.py
 Restart=always
 RestartSec=10
@@ -212,28 +212,28 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable qcloud-monitor
-sudo systemctl start qcloud-monitor
+sudo systemctl enable qcloud-tokenhub-monitor
+sudo systemctl start qcloud-tokenhub-monitor
 ```
 
-### Docker
-
-```dockerfile
-FROM python:3.14-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-WORKDIR /app/src
-CMD ["python", "main.py"]
+### Docker启动
+### 使用镜像
 ```
-
-```bash
-docker build -t qcloud-monitor .
-docker run -d --name qcloud-monitor \
+docker run -d --name qcloud-tokenhub-monitor \
   -v $(pwd)/config:/app/config \
   -v $(pwd)/logs:/app/logs \
-  qcloud-monitor
+  registry.cn-beijing.aliyuncs.com/56/qcloud-tokenhub-monitor:latest
+```
+
+## 自行打包
+```bash
+#镜像制作
+docker build -t qcloud-tokenhub-monitor .
+#启动
+docker run -d --name qcloud-tokenhub-monitor \
+  -v $(pwd)/config:/app/config \
+  -v $(pwd)/logs:/app/logs \
+  qcloud-tokenhub-monitor
 ```
 
 ## 注意事项
