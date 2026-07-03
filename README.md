@@ -18,6 +18,7 @@
 - 企业微信群机器人 Markdown 格式告警，信息丰富直观
 - 支持 cron 表达式和 interval 两种定时调度方式
 - 支持单次执行模式和测试告警模式
+- 暴露 Prometheus metrics 指标，便于集成监控大盘
 - 完善的日志记录（控制台 + 文件轮转）
 
 ## 项目结构
@@ -32,6 +33,7 @@ qcloud-monitor/
 │   ├── qcloud_client.py     # 腾讯云 TokenHub API 客户端
 │   ├── monitor.py           # 额度监控逻辑
 │   ├── notifier.py          # 企微机器人告警通知
+│   ├── metrics.py           # Prometheus 指标暴露
 │   └── logger_config.py     # 日志配置
 ├── logs/                    # 日志目录（自动创建）
 ├── requirements.txt         # Python 依赖
@@ -176,6 +178,7 @@ schedule:
 |-----|------|
 | [DescribeTokenPlanList](https://cloud.tencent.com/document/api/1823/132269) | 查询套餐列表 |
 | [DescribeTokenPlan](https://cloud.tencent.com/document/api/1823/132270) | 查询套餐详情（含额度用量） |
+| [DescribeUsageRankList](https://cloud.tencent.com/document/api/1823/132279) | 查询用量排行（按 API Key/模型/接入点维度聚合） |
 
 ### 关键数据结构
 
@@ -193,6 +196,226 @@ schedule:
 - `FROZEN` - 冻结
 - `EXHAUSTED` - 额度耗尽
 - `DESTROYED` - 已销毁
+
+## Prometheus 指标
+
+程序内置 Prometheus metrics 暴露，默认监听 `0.0.0.0:9100/metrics`，可对接 Prometheus + Grafana + Alertmanager 实现完整的监控告警体系。
+
+### 配置
+
+```yaml
+metrics:
+  enabled: true               # 是否启用
+  addr: "0.0.0.0"             # 监听地址
+  port: 9100                  # 监听端口
+  # 用量排行维度，支持: apikey / model / endpoint
+  usage_dimensions: ["apikey", "model"]
+  # 用量统计时间范围: current_cycle / last_cycle / today / yesterday / last_7_days / last_30_days
+  usage_period: "current_cycle"
+```
+
+### 指标列表
+
+#### 额度指标
+
+| 指标 | 类型 | 说明 | 标签 |
+|------|------|------|------|
+| `tokenhub_plan_usage_percent` | Gauge | 套餐额度使用率（%） | team_id, name, product_type |
+| `tokenhub_plan_total_quota` | Gauge | 套餐总额度 | team_id, name, unit |
+| `tokenhub_plan_total_used` | Gauge | 套餐已使用额度 | team_id, name, unit |
+| `tokenhub_plan_remaining` | Gauge | 套餐剩余额度 | team_id, name, unit |
+| `tokenhub_plan_cycle_quota` | Gauge | 套餐当期额度 | team_id, name, unit |
+| `tokenhub_plan_current_cycle` | Gauge | 当前周期 | team_id, name |
+| `tokenhub_plan_remain_cycles` | Gauge | 剩余周期数 | team_id, name |
+| `tokenhub_plan_total_cycles` | Gauge | 总周期数 | team_id, name |
+| `tokenhub_plan_status` | Gauge | 套餐状态（1=正常, 0=异常） | team_id, name, status, stop_reason |
+| `tokenhub_plan_exclusive_allocated` | Gauge | 独占池已分配额度 | team_id, name, unit |
+| `tokenhub_plan_exclusive_used` | Gauge | 独占池已使用额度 | team_id, name, unit |
+| `tokenhub_plan_shared_pool` | Gauge | 共享池总额度 | team_id, name, unit |
+| `tokenhub_plan_shared_used` | Gauge | 共享池已使用额度 | team_id, name, unit |
+
+#### Token 使用指标（当前周期累计）
+
+| 指标 | 类型 | 说明 | 标签 |
+|------|------|------|------|
+| `tokenhub_plan_token_usage` | Gauge | Token 用量（通用，按 billing_item 标签区分） | team_id, name, billing_item |
+| `tokenhub_plan_token_input` | Gauge | 输入 Token 用量 | team_id, name |
+| `tokenhub_plan_token_output` | Gauge | 输出 Token 用量 | team_id, name |
+| `tokenhub_plan_token_cache` | Gauge | 缓存 Token 用量 | team_id, name |
+| `tokenhub_plan_token_total` | Gauge | 总 Token 用量（输入+输出+缓存） | team_id, name |
+| `tokenhub_plan_call_count` | Gauge | API 调用次数 | team_id, name |
+| `tokenhub_plan_cache_hit_ratio` | Gauge | 缓存命中率（%） | team_id, name |
+
+#### 时间指标
+
+| 指标 | 类型 | 说明 | 标签 |
+|------|------|------|------|
+| `tokenhub_plan_start_timestamp` | Gauge | 套餐开始时间（Unix 时间戳） | team_id, name |
+| `tokenhub_plan_expire_timestamp` | Gauge | 套餐到期时间（Unix 时间戳） | team_id, name |
+| `tokenhub_plan_cycle_seq` | Gauge | 当前计费周期序号 | team_id, name |
+| `tokenhub_plan_cycle_start_timestamp` | Gauge | 当前计费周期开始时间 | team_id, name |
+| `tokenhub_plan_cycle_end_timestamp` | Gauge | 当前计费周期结束时间 | team_id, name |
+
+#### API Key 指标
+
+| 指标 | 类型 | 说明 | 标签 |
+|------|------|------|------|
+| `tokenhub_plan_api_key_count` | Gauge | 已创建 API Key 数量 | team_id, name |
+| `tokenhub_plan_api_key_max` | Gauge | API Key 上限 | team_id, name |
+
+#### 按维度聚合的 Token 用量指标（DescribeUsageRankList）
+
+按 `apikey` / `model` / `endpoint` 维度聚合的 Token 用量，可通过配置 `metrics.usage_dimensions` 选择启用的维度。
+
+| 指标 | 类型 | 说明 | 标签 |
+|------|------|------|------|
+| `tokenhub_usage_input_token` | Gauge | 输入 Token 用量 | team_id, plan_name, dimension, key, name |
+| `tokenhub_usage_output_token` | Gauge | 输出 Token 用量 | team_id, plan_name, dimension, key, name |
+| `tokenhub_usage_cache_token` | Gauge | 缓存 Token 用量 | team_id, plan_name, dimension, key, name |
+| `tokenhub_usage_total_token` | Gauge | 总 Token 用量 | team_id, plan_name, dimension, key, name |
+| `tokenhub_usage_search_request_count` | Gauge | 搜索请求数 | team_id, plan_name, dimension, key, name |
+| `tokenhub_usage_search_count` | Gauge | 搜索引擎调用次数 | team_id, plan_name, dimension, key, name |
+
+> `dimension` 标签取值: `apikey` / `model` / `endpoint`，`key` 为对应维度的标识（如 API Key ID、模型名等），`name` 为展示名。
+
+#### 程序运行指标
+
+| 指标 | 类型 | 说明 | 标签 |
+|------|------|------|------|
+| `tokenhub_plans_total` | Gauge | 监控的套餐总数 | - |
+| `tokenhub_check_total` | Counter | 额度检查执行总次数 | - |
+| `tokenhub_check_errors_total` | Counter | 额度检查失败次数 | - |
+| `tokenhub_check_duration_seconds` | Gauge | 最近一次检查耗时（秒） | - |
+
+### Prometheus 采集配置示例
+
+```yaml
+scrape_configs:
+  - job_name: 'qcloud-tokenhub-monitor'
+    static_configs:
+      - targets: ['localhost:9100']
+```
+
+### Alertmanager 告警规则示例
+
+```yaml
+groups:
+  - name: tokenhub-quota
+    rules:
+      # 使用率 >= 90%
+      - alert: TokenHubQuotaCritical
+        expr: tokenhub_plan_usage_percent >= 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "套餐 {{ $labels.name }} 额度使用率严重"
+          description: "套餐 {{ $labels.name }} ({{ $labels.team_id }}) 使用率已达 {{ $value }}%"
+
+      # 使用率 >= 80%
+      - alert: TokenHubQuotaWarning
+        expr: tokenhub_plan_usage_percent >= 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "套餐 {{ $labels.name }} 额度使用率告警"
+          description: "套餐 {{ $labels.name }} ({{ $labels.team_id }}) 使用率已达 {{ $value }}%"
+
+      # 套餐状态异常
+      - alert: TokenHubPlanAbnormal
+        expr: tokenhub_plan_status == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "套餐 {{ $labels.name }} 状态异常"
+          description: "套餐 {{ $labels.name }} 状态: {{ $labels.status }}, 原因: {{ $labels.stop_reason }}"
+
+      # 套餐即将到期（7天内）
+      - alert: TokenHubPlanExpiringSoon
+        expr: (tokenhub_plan_expire_timestamp - time()) < 7 * 24 * 3600
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "套餐 {{ $labels.name }} 即将到期"
+          description: "套餐 {{ $labels.name }} 将在 {{ $value | humanizeDuration }} 后到期"
+
+      # 检查失败
+      - alert: TokenHubCheckFailed
+        expr: rate(tokenhub_check_errors_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "TokenHub 监控检查失败"
+          description: "过去 10 分钟内检查出现错误"
+```
+
+### Grafana 常用 PromQL 示例
+
+```promql
+# 各套餐使用率
+tokenhub_plan_usage_percent
+
+# 使用率超过 80% 的套餐
+tokenhub_plan_usage_percent > 80
+
+# 套餐剩余额度
+tokenhub_plan_remaining
+
+# 输入 Token 用量
+tokenhub_plan_token_input
+
+# 输出 Token 用量
+tokenhub_plan_token_output
+
+# 缓存 Token 用量
+tokenhub_plan_token_cache
+
+# 总 Token 用量
+tokenhub_plan_token_total
+
+# 缓存命中率
+tokenhub_plan_cache_hit_ratio
+
+# API 调用次数
+tokenhub_plan_call_count
+
+# 各计费项 Token 使用量（通用）
+tokenhub_plan_token_usage
+
+# 按 API Key 维度的输入 Token 用量
+tokenhub_usage_input_token{dimension="apikey"}
+
+# 按模型维度的总 Token 用量排行
+topk(10, tokenhub_usage_total_token{dimension="model"})
+
+# 按模型维度的缓存命中率
+tokenhub_usage_cache_token{dimension="model"} / (tokenhub_usage_input_token{dimension="model"} + tokenhub_usage_cache_token{dimension="model"}) * 100
+
+# 按 API Key 维度的输出 Token 用量
+tokenhub_usage_output_token{dimension="apikey"}
+
+# 按 endpoint 维度的搜索调用次数
+tokenhub_usage_search_count{dimension="endpoint"}
+
+# 距离到期剩余天数
+(tokenhub_plan_expire_timestamp - time()) / 86400
+
+# 当前计费周期剩余天数
+(tokenhub_plan_cycle_end_timestamp - time()) / 86400
+
+# API Key 使用率
+tokenhub_plan_api_key_count / tokenhub_plan_api_key_max * 100
+
+# 检查成功率
+1 - rate(tokenhub_check_errors_total[1h]) / rate(tokenhub_check_total[1h])
+
+# 最近一次检查耗时
+tokenhub_check_duration_seconds
+```
 
 ## 部署建议
 
@@ -242,6 +465,7 @@ sudo systemctl start qcloud-tokenhub-monitor
 docker run -d --name qcloud-tokenhub-monitor \
   --restart unless-stopped \
   -e TZ=Asia/Shanghai \
+  -p 9100:9100 \
   -v $(pwd)/config:/app/config \
   -v $(pwd)/logs:/app/logs \
   ghcr.io/nmgliangwei/qcloud-tokenhub-monitor:latest
@@ -254,6 +478,7 @@ docker build -t qcloud-tokenhub-monitor .
 #启动
 docker run -d --name qcloud-tokenhub-monitor \
   --restart unless-stopped \
+  -p 9100:9100 \
   -v $(pwd)/config:/app/config \
   -v $(pwd)/logs:/app/logs \
   qcloud-tokenhub-monitor

@@ -148,3 +148,115 @@ class TokenHubClient:
         except Exception as e:
             logger.error("获取套餐 %s 详情失败: %s", team_id, e)
             return None
+
+    def describe_usage_rank_list(
+        self,
+        team_id: str,
+        dimension: str = "apikey",
+        metric_type: str = "tokens",
+        start_time: str = "",
+        end_time: str = "",
+        period: str = "current_cycle",
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """
+        查询用量排行列表（按维度聚合的 Token 用量统计）
+
+        Args:
+            team_id: 套餐 ID
+            dimension: 维度，取值: apikey / model / endpoint
+            metric_type: 指标类型，取值: tokens / search
+            start_time: 开始时间（RFC3339），留空使用 period
+            end_time: 结束时间（RFC3339），留空使用 period
+            period: 时间范围，取值: current_cycle / last_cycle / today / yesterday / last_7_days / last_30_days
+            limit: 返回数量
+            offset: 分页偏移
+
+        Returns:
+            用量排行数据，包含 TopList、TotalStats 等
+        """
+        try:
+            import json
+
+            params = {
+                "Target": team_id,
+                "Dimension": dimension,
+                "MetricType": metric_type,
+                "Period": period,
+                "Limit": limit,
+                "Offset": offset,
+            }
+            if start_time:
+                params["StartTime"] = start_time
+            if end_time:
+                params["EndTime"] = end_time
+
+            req = models.DescribeUsageRankListRequest()
+            req.from_json_string(json.dumps(params))
+
+            resp = self.client.DescribeUsageRankList(req)
+            result = resp.to_json_string()
+            logger.debug(
+                "DescribeUsageRankList(%s, dim=%s) 响应: %s",
+                team_id, dimension, result,
+            )
+
+            return json.loads(result)
+        except TencentCloudSDKException as e:
+            logger.error(
+                "调用 DescribeUsageRankList(%s, dim=%s) 失败: %s",
+                team_id, dimension, e,
+            )
+            raise
+        except Exception as e:
+            logger.error(
+                "DescribeUsageRankList(%s, dim=%s) 未知异常: %s",
+                team_id, dimension, e,
+            )
+            raise
+
+    def get_usage_rank(
+        self,
+        team_id: str,
+        dimension: str = "apikey",
+        period: str = "current_cycle",
+    ) -> List[Dict[str, Any]]:
+        """
+        获取指定维度的用量排行（自动分页）
+
+        Args:
+            team_id: 套餐 ID
+            dimension: 维度，取值: apikey / model / endpoint
+            period: 时间范围
+
+        Returns:
+            TopList 列表，每项包含 Key、Name、Stats 等
+        """
+        all_items: List[Dict[str, Any]] = []
+        offset = 0
+        limit = 100
+
+        while True:
+            data = self.describe_usage_rank_list(
+                team_id=team_id,
+                dimension=dimension,
+                period=period,
+                limit=limit,
+                offset=offset,
+            )
+            top_list = data.get("TopList", [])
+            total = data.get("Total", 0)
+
+            all_items.extend(top_list)
+
+            if len(all_items) >= total or len(top_list) == 0:
+                break
+
+            offset += limit
+
+        logger.info(
+            "套餐 %s 的 %s 维度用量排行: 共 %d 条",
+            team_id, dimension, len(all_items),
+        )
+        return all_items

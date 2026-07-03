@@ -29,6 +29,7 @@ from logger_config import setup_logging
 from qcloud_client import TokenHubClient
 from monitor import QuotaMonitor, AlertCooldownManager
 from notifier import WeComBot
+from metrics import MetricsManager
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +62,30 @@ class TokenPlanMonitorApp:
         # 初始化企微机器人
         self.bot = WeComBot(webhook_url=config["wecom_webhook"])
 
+        # 初始化 Prometheus 指标管理器
+        self.metrics = MetricsManager()
+
+        # 用量排行维度配置
+        self.usage_dimensions = config.get("metrics", {}).get(
+            "usage_dimensions", ["apikey", "model"]
+        )
+        self.usage_period = config.get("metrics", {}).get(
+            "usage_period", "current_cycle"
+        )
+
+        # 启动 metrics HTTP 服务
+        metrics_config = config.get("metrics", {})
+        if metrics_config.get("enabled", True):
+            port = metrics_config.get("port", 9100)
+            addr = metrics_config.get("addr", "0.0.0.0")
+            self.metrics.start_server(port=port, addr=addr)
+
     def run_check(self):
         """执行一次额度检查"""
         logger.info("=" * 60)
         logger.info("开始执行 TokenPlan 额度检查")
         start_time = time.time()
+        check_success = True
 
         try:
             # 1. 获取所有套餐列表
@@ -98,30 +118,58 @@ class TokenPlanMonitorApp:
             # 3. 检查阈值
             alerts = self.monitor.check_all_plans(plan_details)
 
+            # 4. 更新套餐额度指标
+            plan_infos = [
+                self.monitor.parse_plan_detail(detail) for detail in plan_details
+            ]
+            self.metrics.update_plan_metrics(plan_infos)
+
+            # 5. 获取按维度聚合的 Token 用量排行
+            for plan_info in plan_infos:
+                for dimension in self.usage_dimensions:
+                    try:
+                        rank_items = self.client.get_usage_rank(
+                            team_id=plan_info.team_id,
+                            dimension=dimension,
+                            period=self.usage_period,
+                        )
+                        self.metrics.update_usage_rank_metrics(
+                            team_id=plan_info.team_id,
+                            plan_name=plan_info.name,
+                            dimension=dimension,
+                            rank_items=rank_items,
+                        )
+                        # 避免触发频率限制
+                        time.sleep(0.1)
+                    except Exception as e:
+                        logger.warning(
+                            "获取套餐 %s 的 %s 维度用量排行失败: %s",
+                            plan_info.team_id, dimension, e,
+                        )
+
             if not alerts:
                 logger.info("所有套餐额度使用正常，无需告警")
-                return
-
-            # 4. 过滤冷却期内的告警
-            filtered_alerts = []
-            for alert in alerts:
-                if self.cooldown_mgr.should_alert(alert.plan.team_id, alert.level):
-                    filtered_alerts.append(alert)
-
-            if not filtered_alerts:
-                logger.info("所有告警均在冷却期内，跳过发送")
-                return
-
-            # 5. 发送告警
-            logger.info("共 %d 条告警需要发送", len(filtered_alerts))
-            success = self.bot.send_alerts_summary(filtered_alerts)
-
-            if success:
-                logger.info("告警发送完成")
             else:
-                logger.error("部分告警发送失败")
+                # 6. 过滤冷却期内的告警
+                filtered_alerts = []
+                for alert in alerts:
+                    if self.cooldown_mgr.should_alert(alert.plan.team_id, alert.level):
+                        filtered_alerts.append(alert)
+
+                if not filtered_alerts:
+                    logger.info("所有告警均在冷却期内，跳过发送")
+                else:
+                    # 7. 发送告警
+                    logger.info("共 %d 条告警需要发送", len(filtered_alerts))
+                    success = self.bot.send_alerts_summary(filtered_alerts)
+
+                    if success:
+                        logger.info("告警发送完成")
+                    else:
+                        logger.error("部分告警发送失败")
 
         except Exception as e:
+            check_success = False
             logger.error("额度检查执行失败: %s", e, exc_info=True)
             # 发送错误通知
             try:
@@ -129,9 +177,11 @@ class TokenPlanMonitorApp:
             except Exception:
                 pass
 
-        elapsed = time.time() - start_time
-        logger.info("额度检查完成，耗时 %.2f 秒", elapsed)
-        logger.info("=" * 60)
+        finally:
+            elapsed = time.time() - start_time
+            self.metrics.record_check(duration=elapsed, success=check_success)
+            logger.info("额度检查完成，耗时 %.2f 秒", elapsed)
+            logger.info("=" * 60)
 
     def run_once(self):
         """执行一次检查后退出"""

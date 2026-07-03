@@ -44,6 +44,23 @@ class PlanUsageInfo:
     start_time: str = ""
     expire_time: str = ""
 
+    # 总周期数
+    total_cycles: int = 0
+
+    # Token 使用明细（TokenSummary.BillingItems）
+    # 每项: {"billing_item": str, "total_qty": float}
+    # billing_item 取值: input / output / cache / call_count
+    token_billing_items: List[Dict[str, Any]] = field(default_factory=list)
+
+    # 当前计费周期信息（TokenSummary）
+    cycle_seq: int = 0
+    cycle_start_time: str = ""
+    cycle_end_time: str = ""
+
+    # API Key 数量
+    api_key_count: int = 0
+    api_key_max: int = 0
+
     # 额度单位
     unit: str = "credits"
 
@@ -109,6 +126,18 @@ class QuotaMonitor:
         remaining = quota_base - total_used
         usage_percent = (total_used / quota_base * 100) if quota_base > 0 else 0.0
 
+        # 解析 Token 使用明细（TokenSummary.BillingItems）
+        token_billing_items: List[Dict[str, Any]] = []
+        token_summary = plan_detail.get("TokenSummary") or {}
+        raw_billing_items = token_summary.get("BillingItems") or []
+        for item in raw_billing_items:
+            token_billing_items.append(
+                {
+                    "billing_item": item.get("BillingItem", ""),
+                    "total_qty": _to_float(item.get("TotalQty")),
+                }
+            )
+
         return PlanUsageInfo(
             team_id=plan_detail.get("TeamId", ""),
             name=plan_detail.get("Name", ""),
@@ -128,6 +157,13 @@ class QuotaMonitor:
             shared_used=_to_float(package_info.get("SharedUsed")),
             start_time=package_info.get("StartTime", ""),
             expire_time=package_info.get("ExpireTime", ""),
+            total_cycles=package_info.get("TotalCycles", 0) or 0,
+            token_billing_items=token_billing_items,
+            cycle_seq=token_summary.get("CycleSeq", 0) or 0,
+            cycle_start_time=token_summary.get("CycleStartTime", ""),
+            cycle_end_time=token_summary.get("CycleEndTime", ""),
+            api_key_count=plan_detail.get("ApiKeyCount", 0) or 0,
+            api_key_max=plan_detail.get("ApiKeyMax", 0) or 0,
             unit=unit,
             raw=plan_detail,
         )
