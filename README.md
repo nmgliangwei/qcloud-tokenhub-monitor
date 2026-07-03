@@ -239,8 +239,8 @@ metrics:
   #     last_Nd        - N 为任意正整数，如 last_1d, last_3d, last_14d
   # 注意:
   #   - N 为任意正整数，代码层面无上限
-  #   - 腾讯云 API 对时间跨度有上限限制（错误码 PeriodExceedsSpan），文档未明确具体值
-  #   - 建议不超过 30 天，超出后 API 可能返回错误，程序会跳过并记录 WARNING 日志
+  #   - 腾讯云 API 限制最大时间跨度 90 天，超出会返回 PeriodExceedsSpan 错误
+  #   - 用量排行为账户级别查询，不区分套餐，指标中 team_id="account"、plan_name="all"
   usage_period: "last_24h"
 ```
 

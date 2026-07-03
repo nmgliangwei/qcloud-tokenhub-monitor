@@ -151,25 +151,30 @@ class TokenHubClient:
 
     def describe_usage_rank_list(
         self,
-        team_id: str,
         dimension: str = "apikey",
         metric_type: str = "tokens",
         start_time: str = "",
         end_time: str = "",
-        limit: int = 100,
+        period: int = 86400,
+        target: str = "",
+        show_all: bool = True,
         offset: int = 0,
     ) -> Dict[str, Any]:
         """
         查询用量排行列表（按维度聚合的 Token 用量统计）
 
         Args:
-            team_id: 套餐 ID
-            dimension: 维度，取值: apikey / model / endpoint
-            metric_type: 指标类型，取值: tokens / search
-            start_time: 开始时间（RFC3339，如 2026-07-01T00:00:00+08:00）
-            end_time: 结束时间（RFC3339）
-            limit: 返回数量
-            offset: 分页偏移
+            dimension: 统计维度，取值: apikey / model / endpoint
+            metric_type: 指标族，取值: tokens / search
+            start_time: 起始时间（RFC3339，闭区间）
+            end_time: 结束时间（RFC3339，开区间），与 StartTime 跨度最大 90 天
+            period: 统计粒度（秒），取值: 60 / 300 / 3600 / 86400
+                    必须不小于跨度对应下限：
+                    跨度 ≤ 1 天 → 60；1~5 天 → 300；5~10 天 → 3600；> 10 天 → 86400
+                    仅 ShowAll=false 时使用
+            target: 维度过滤值，空字符串表示查询全部对象
+            show_all: true 返回全量对象（不含 Series），false 分页返回（每页 10 条，含 Series）
+            offset: 翻页起点，仅 ShowAll=false 时有效
 
         Returns:
             用量排行数据，包含 TopList、TotalStats 等
@@ -178,12 +183,13 @@ class TokenHubClient:
             import json
 
             params = {
-                "Target": team_id,
                 "Dimension": dimension,
                 "MetricType": metric_type,
                 "StartTime": start_time,
                 "EndTime": end_time,
-                "Limit": limit,
+                "Period": period,
+                "Target": target,
+                "ShowAll": show_all,
                 "Offset": offset,
             }
 
@@ -193,28 +199,28 @@ class TokenHubClient:
             resp = self.client.DescribeUsageRankList(req)
             result = resp.to_json_string()
             logger.debug(
-                "DescribeUsageRankList(%s, dim=%s) 响应: %s",
-                team_id, dimension, result,
+                "DescribeUsageRankList(dim=%s) 响应: %s",
+                dimension, result,
             )
 
             return json.loads(result)
         except TencentCloudSDKException as e:
             logger.error(
-                "调用 DescribeUsageRankList(%s, dim=%s) 失败: %s",
-                team_id, dimension, e,
+                "调用 DescribeUsageRankList(dim=%s) 失败: %s",
+                dimension, e,
             )
             raise
         except Exception as e:
             logger.error(
-                "DescribeUsageRankList(%s, dim=%s) 未知异常: %s",
-                team_id, dimension, e,
+                "DescribeUsageRankList(dim=%s) 未知异常: %s",
+                dimension, e,
             )
             raise
 
     @staticmethod
     def _resolve_time_range(period: str) -> tuple:
         """
-        将 period 字符串解析为 (start_time, end_time) RFC3339 字符串
+        将 period 字符串解析为 (start_time, end_time, granularity) 三元组
 
         支持以下格式：
           - 固定标识: today / yesterday / last_7_days / last_30_days / current_cycle
@@ -225,7 +231,10 @@ class TokenHubClient:
             period: 时间范围标识
 
         Returns:
-            (start_time, end_time) RFC3339 格式字符串
+            (start_time, end_time, granularity)
+            - start_time / end_time: RFC3339 格式字符串
+            - granularity: 统计粒度（秒），取值 60/300/3600/86400
+              跨度 ≤ 1 天 → 60；1~5 天 → 300；5~10 天 → 3600；> 10 天 → 86400
         """
         import re
         from datetime import datetime, timedelta, timezone
@@ -235,91 +244,92 @@ class TokenHubClient:
         def _fmt(dt: datetime) -> str:
             return dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
+        def _granularity(start: datetime, end: datetime) -> int:
+            """根据时间跨度返回最小允许的统计粒度（秒）"""
+            span_seconds = (end - start).total_seconds()
+            span_days = span_seconds / 86400
+            if span_days <= 1:
+                return 60
+            elif span_days <= 5:
+                return 300
+            elif span_days <= 10:
+                return 3600
+            else:
+                return 86400
+
         # 相对小时: last_Nh (如 last_1h, last_6h)
         m = re.match(r"^last_(\d+)h$", period)
         if m:
             hours = int(m.group(1))
             start = now - timedelta(hours=hours)
-            return _fmt(start), _fmt(now)
+            return _fmt(start), _fmt(now), _granularity(start, now)
 
         # 相对天数: last_Nd (如 last_1d, last_3d)
         m = re.match(r"^last_(\d+)d$", period)
         if m:
             days = int(m.group(1))
             start = now - timedelta(days=days)
-            return _fmt(start), _fmt(now)
+            return _fmt(start), _fmt(now), _granularity(start, now)
 
         # 固定标识
         if period == "today":
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            return _fmt(start), _fmt(now)
+            return _fmt(start), _fmt(now), _granularity(start, now)
         elif period == "yesterday":
             start = (now - timedelta(days=1)).replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
             end = start + timedelta(days=1)
-            return _fmt(start), _fmt(end)
+            return _fmt(start), _fmt(end), _granularity(start, end)
         elif period == "last_7_days":
             start = (now - timedelta(days=7)).replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
-            return _fmt(start), _fmt(now)
+            return _fmt(start), _fmt(now), _granularity(start, now)
         elif period == "last_30_days":
             start = (now - timedelta(days=30)).replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
-            return _fmt(start), _fmt(now)
+            return _fmt(start), _fmt(now), _granularity(start, now)
         else:
             # current_cycle / 未知值，默认取最近 30 天
             start = (now - timedelta(days=30)).replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
-            return _fmt(start), _fmt(now)
+            return _fmt(start), _fmt(now), _granularity(start, now)
 
     def get_usage_rank(
         self,
-        team_id: str,
         dimension: str = "apikey",
         period: str = "current_cycle",
     ) -> List[Dict[str, Any]]:
         """
-        获取指定维度的用量排行（自动分页）
+        获取指定维度的用量排行（全量返回）
+
+        使用 ShowAll=true 一次性返回全量对象，不返回 Series 时序点。
+        我们只需要 Stats 聚合值，不需要时序曲线。
 
         Args:
-            team_id: 套餐 ID
-            dimension: 维度，取值: apikey / model / endpoint
-            period: 时间范围，取值: current_cycle / today / yesterday / last_7_days / last_30_days
+            dimension: 统计维度，取值: apikey / model / endpoint
+            period: 时间范围，支持: today / yesterday / last_7_days / last_30_days /
+                    current_cycle / last_Nh / last_Nd
 
         Returns:
             TopList 列表，每项包含 Key、Name、Stats 等
         """
-        start_time, end_time = self._resolve_time_range(period)
+        start_time, end_time, granularity = self._resolve_time_range(period)
 
-        all_items: List[Dict[str, Any]] = []
-        offset = 0
-        limit = 100
-
-        while True:
-            data = self.describe_usage_rank_list(
-                team_id=team_id,
-                dimension=dimension,
-                start_time=start_time,
-                end_time=end_time,
-                limit=limit,
-                offset=offset,
-            )
-            top_list = data.get("TopList", [])
-            total = data.get("Total", 0)
-
-            all_items.extend(top_list)
-
-            if len(all_items) >= total or len(top_list) == 0:
-                break
-
-            offset += limit
+        data = self.describe_usage_rank_list(
+            dimension=dimension,
+            start_time=start_time,
+            end_time=end_time,
+            period=granularity,
+            show_all=True,
+        )
+        top_list = data.get("TopList", [])
 
         logger.info(
-            "套餐 %s 的 %s 维度用量排行(%s~%s): 共 %d 条",
-            team_id, dimension, start_time, end_time, len(all_items),
+            "%s 维度用量排行(%s~%s, 粒度%ds): 共 %d 条",
+            dimension, start_time, end_time, granularity, len(top_list),
         )
-        return all_items
+        return top_list

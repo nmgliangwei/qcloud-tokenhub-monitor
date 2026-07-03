@@ -117,27 +117,25 @@ class TokenPlanMonitorApp:
             ]
             self.metrics.update_plan_metrics(plan_infos)
 
-            # 4. 获取按维度聚合的 Token 用量排行
-            for plan_info in plan_infos:
-                for dimension in self.usage_dimensions:
-                    try:
-                        rank_items = self.client.get_usage_rank(
-                            team_id=plan_info.team_id,
-                            dimension=dimension,
-                            period=self.usage_period,
-                        )
-                        self.metrics.update_usage_rank_metrics(
-                            team_id=plan_info.team_id,
-                            plan_name=plan_info.name,
-                            dimension=dimension,
-                            rank_items=rank_items,
-                        )
-                        time.sleep(0.1)
-                    except Exception as e:
-                        logger.warning(
-                            "获取套餐 %s 的 %s 维度用量排行失败: %s",
-                            plan_info.team_id, dimension, e,
-                        )
+            # 4. 获取按维度聚合的 Token 用量排行（账户级别，非按套餐）
+            for dimension in self.usage_dimensions:
+                try:
+                    rank_items = self.client.get_usage_rank(
+                        dimension=dimension,
+                        period=self.usage_period,
+                    )
+                    self.metrics.update_usage_rank_metrics(
+                        team_id="account",
+                        plan_name="all",
+                        dimension=dimension,
+                        rank_items=rank_items,
+                    )
+                    time.sleep(0.1)
+                except Exception as e:
+                    logger.warning(
+                        "获取 %s 维度用量排行失败: %s",
+                        dimension, e,
+                    )
 
         except Exception as e:
             logger.error("指标更新失败: %s", e, exc_info=True)
@@ -190,28 +188,26 @@ class TokenPlanMonitorApp:
             ]
             self.metrics.update_plan_metrics(plan_infos)
 
-            # 5. 获取按维度聚合的 Token 用量排行
-            for plan_info in plan_infos:
-                for dimension in self.usage_dimensions:
-                    try:
-                        rank_items = self.client.get_usage_rank(
-                            team_id=plan_info.team_id,
-                            dimension=dimension,
-                            period=self.usage_period,
-                        )
-                        self.metrics.update_usage_rank_metrics(
-                            team_id=plan_info.team_id,
-                            plan_name=plan_info.name,
-                            dimension=dimension,
-                            rank_items=rank_items,
-                        )
-                        # 避免触发频率限制
-                        time.sleep(0.1)
-                    except Exception as e:
-                        logger.warning(
-                            "获取套餐 %s 的 %s 维度用量排行失败: %s",
-                            plan_info.team_id, dimension, e,
-                        )
+            # 5. 获取按维度聚合的 Token 用量排行（账户级别，非按套餐）
+            for dimension in self.usage_dimensions:
+                try:
+                    rank_items = self.client.get_usage_rank(
+                        dimension=dimension,
+                        period=self.usage_period,
+                    )
+                    self.metrics.update_usage_rank_metrics(
+                        team_id="account",
+                        plan_name="all",
+                        dimension=dimension,
+                        rank_items=rank_items,
+                    )
+                    # 避免触发频率限制
+                    time.sleep(0.1)
+                except Exception as e:
+                    logger.warning(
+                        "获取 %s 维度用量排行失败: %s",
+                        dimension, e,
+                    )
 
             if not self.alert_enabled:
                 logger.info("告警检测已关闭，跳过告警发送")
