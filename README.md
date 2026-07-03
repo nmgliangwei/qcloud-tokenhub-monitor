@@ -201,6 +201,10 @@ schedule:
 
 程序内置 Prometheus metrics 暴露，默认监听 `0.0.0.0:9100/metrics`，可对接 Prometheus + Grafana + Alertmanager 实现完整的监控告警体系。
 
+metrics 指标刷新与告警检测使用独立的调度周期：
+- **告警检测**：由 `schedule.cron` 或 `schedule.interval_minutes` 控制（如每 30 分钟）
+- **指标刷新**：由 `metrics.refresh_interval_minutes` 控制（如每 5 分钟），独立调用 API 更新指标，不影响告警检测频率
+
 ### 配置
 
 ```yaml
@@ -208,10 +212,27 @@ metrics:
   enabled: true               # 是否启用
   addr: "0.0.0.0"             # 监听地址
   port: 9100                  # 监听端口
+  # metrics 指标刷新周期（分钟），独立于告警检测周期 schedule
+  # 腾讯云 API 限制 20 次/秒，建议不低于 3 分钟，默认 5 分钟
+  refresh_interval_minutes: 5
   # 用量排行维度，支持: apikey / model / endpoint
   usage_dimensions: ["apikey", "model"]
-  # 用量统计时间范围: current_cycle / last_cycle / today / yesterday / last_7_days / last_30_days
-  usage_period: "current_cycle"
+  # 用量统计时间范围，支持:
+  #   固定标识:
+  #     today          - 今天 0:00 到当前时刻
+  #     yesterday      - 昨天 0:00 到今天 0:00（完整自然日）
+  #     last_7_days    - 7 天前 0:00 到当前时刻
+  #     last_30_days   - 30 天前 0:00 到当前时刻
+  #     current_cycle  - 默认取最近 30 天
+  #   相对小时（滚动窗口，从 N 小时前到当前时刻）:
+  #     last_Nh        - N 为任意正整数，如 last_1h, last_6h, last_12h, last_24h
+  #   相对天数（滚动窗口，从 N 天前同一时刻到当前时刻）:
+  #     last_Nd        - N 为任意正整数，如 last_1d, last_3d, last_14d
+  # 注意:
+  #   - N 为任意正整数，代码层面无上限
+  #   - 腾讯云 API 对时间跨度有上限限制（错误码 PeriodExceedsSpan），文档未明确具体值
+  #   - 建议不超过 30 天，超出后 API 可能返回错误，程序会跳过并记录 WARNING 日志
+  usage_period: "last_24h"
 ```
 
 ### 指标列表

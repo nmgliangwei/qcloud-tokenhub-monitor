@@ -70,7 +70,7 @@ class TokenPlanMonitorApp:
             "usage_dimensions", ["apikey", "model"]
         )
         self.usage_period = config.get("metrics", {}).get(
-            "usage_period", "current_cycle"
+            "usage_period", "last_24h"
         )
 
         # 启动 metrics HTTP 服务
@@ -80,8 +80,71 @@ class TokenPlanMonitorApp:
             addr = metrics_config.get("addr", "0.0.0.0")
             self.metrics.start_server(port=port, addr=addr)
 
+    def run_metrics_update(self):
+        """单独执行一次 metrics 指标更新（不含告警检测）"""
+        logger.info("-" * 40)
+        logger.info("开始更新 Prometheus 指标")
+        start_time = time.time()
+
+        try:
+            # 1. 获取所有套餐列表
+            plans = self.client.get_all_plans()
+            if not plans:
+                logger.info("未找到任何套餐")
+                return
+
+            # 2. 获取每个套餐的详情
+            plan_details = []
+            for plan in plans:
+                team_id = plan.get("TeamId", "")
+                if not team_id:
+                    continue
+
+                detail = self.client.get_plan_details(team_id)
+                if detail:
+                    plan_details.append(detail)
+                else:
+                    plan_details.append(plan)
+
+                time.sleep(0.1)
+
+            # 3. 更新套餐额度指标
+            plan_infos = [
+                self.monitor.parse_plan_detail(detail) for detail in plan_details
+            ]
+            self.metrics.update_plan_metrics(plan_infos)
+
+            # 4. 获取按维度聚合的 Token 用量排行
+            for plan_info in plan_infos:
+                for dimension in self.usage_dimensions:
+                    try:
+                        rank_items = self.client.get_usage_rank(
+                            team_id=plan_info.team_id,
+                            dimension=dimension,
+                            period=self.usage_period,
+                        )
+                        self.metrics.update_usage_rank_metrics(
+                            team_id=plan_info.team_id,
+                            plan_name=plan_info.name,
+                            dimension=dimension,
+                            rank_items=rank_items,
+                        )
+                        time.sleep(0.1)
+                    except Exception as e:
+                        logger.warning(
+                            "获取套餐 %s 的 %s 维度用量排行失败: %s",
+                            plan_info.team_id, dimension, e,
+                        )
+
+        except Exception as e:
+            logger.error("指标更新失败: %s", e, exc_info=True)
+
+        elapsed = time.time() - start_time
+        logger.info("指标更新完成，耗时 %.2f 秒", elapsed)
+        logger.info("-" * 40)
+
     def run_check(self):
-        """执行一次额度检查"""
+        """执行一次额度检查（含告警检测和指标更新）"""
         logger.info("=" * 60)
         logger.info("开始执行 TokenPlan 额度检查")
         start_time = time.time()
@@ -193,7 +256,7 @@ class TokenPlanMonitorApp:
 
         scheduler = BlockingScheduler()
 
-        # 优先使用 cron 表达式
+        # === 告警检测任务 ===
         cron_expr = schedule_config.get("cron")
         interval_minutes = schedule_config.get("interval_minutes")
 
@@ -216,7 +279,7 @@ class TokenPlanMonitorApp:
                     max_instances=1,
                     misfire_grace_time=300,
                 )
-                logger.info("已配置 cron 定时任务: %s", cron_expr)
+                logger.info("已配置告警检测 cron 定时任务: %s", cron_expr)
             else:
                 logger.error("cron 表达式格式错误: %s，应为 5 段格式", cron_expr)
                 sys.exit(1)
@@ -231,12 +294,27 @@ class TokenPlanMonitorApp:
                 misfire_grace_time=300,
                 next_run_time=None,  # 不立即执行，等待第一个间隔
             )
-            logger.info("已配置 interval 定时任务: 每 %d 分钟", interval_minutes)
+            logger.info("已配置告警检测 interval 定时任务: 每 %d 分钟", interval_minutes)
         else:
             logger.error("未配置调度方式，请在 config.yaml 中设置 schedule.cron 或 schedule.interval_minutes")
             sys.exit(1)
 
-        # 启动时先执行一次
+        # === Metrics 指标更新任务（独立调度） ===
+        metrics_config = self.config.get("metrics", {})
+        if metrics_config.get("enabled", True):
+            metrics_interval = metrics_config.get("refresh_interval_minutes", 5)
+
+            scheduler.add_job(
+                self.run_metrics_update,
+                trigger=IntervalTrigger(minutes=metrics_interval),
+                id="metrics_update",
+                name="Prometheus 指标更新",
+                max_instances=1,
+                misfire_grace_time=120,
+            )
+            logger.info("已配置 metrics 指标更新任务: 每 %d 分钟", metrics_interval)
+
+        # 启动时先执行一次完整检查（含告警检测 + 指标更新）
         logger.info("启动时先执行一次检查...")
         self.run_check()
 

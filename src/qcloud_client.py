@@ -156,7 +156,6 @@ class TokenHubClient:
         metric_type: str = "tokens",
         start_time: str = "",
         end_time: str = "",
-        period: str = "current_cycle",
         limit: int = 100,
         offset: int = 0,
     ) -> Dict[str, Any]:
@@ -167,9 +166,8 @@ class TokenHubClient:
             team_id: 套餐 ID
             dimension: 维度，取值: apikey / model / endpoint
             metric_type: 指标类型，取值: tokens / search
-            start_time: 开始时间（RFC3339），留空使用 period
-            end_time: 结束时间（RFC3339），留空使用 period
-            period: 时间范围，取值: current_cycle / last_cycle / today / yesterday / last_7_days / last_30_days
+            start_time: 开始时间（RFC3339，如 2026-07-01T00:00:00+08:00）
+            end_time: 结束时间（RFC3339）
             limit: 返回数量
             offset: 分页偏移
 
@@ -183,14 +181,11 @@ class TokenHubClient:
                 "Target": team_id,
                 "Dimension": dimension,
                 "MetricType": metric_type,
-                "Period": period,
+                "StartTime": start_time,
+                "EndTime": end_time,
                 "Limit": limit,
                 "Offset": offset,
             }
-            if start_time:
-                params["StartTime"] = start_time
-            if end_time:
-                params["EndTime"] = end_time
 
             req = models.DescribeUsageRankListRequest()
             req.from_json_string(json.dumps(params))
@@ -216,6 +211,71 @@ class TokenHubClient:
             )
             raise
 
+    @staticmethod
+    def _resolve_time_range(period: str) -> tuple:
+        """
+        将 period 字符串解析为 (start_time, end_time) RFC3339 字符串
+
+        支持以下格式：
+          - 固定标识: today / yesterday / last_7_days / last_30_days / current_cycle
+          - 相对时长: last_Nh (如 last_1h, last_6h, last_12h)
+          - 相对天数: last_Nd (如 last_1d, last_3d, last_14d)
+
+        Args:
+            period: 时间范围标识
+
+        Returns:
+            (start_time, end_time) RFC3339 格式字符串
+        """
+        import re
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+
+        def _fmt(dt: datetime) -> str:
+            return dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+        # 相对小时: last_Nh (如 last_1h, last_6h)
+        m = re.match(r"^last_(\d+)h$", period)
+        if m:
+            hours = int(m.group(1))
+            start = now - timedelta(hours=hours)
+            return _fmt(start), _fmt(now)
+
+        # 相对天数: last_Nd (如 last_1d, last_3d)
+        m = re.match(r"^last_(\d+)d$", period)
+        if m:
+            days = int(m.group(1))
+            start = now - timedelta(days=days)
+            return _fmt(start), _fmt(now)
+
+        # 固定标识
+        if period == "today":
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            return _fmt(start), _fmt(now)
+        elif period == "yesterday":
+            start = (now - timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            end = start + timedelta(days=1)
+            return _fmt(start), _fmt(end)
+        elif period == "last_7_days":
+            start = (now - timedelta(days=7)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            return _fmt(start), _fmt(now)
+        elif period == "last_30_days":
+            start = (now - timedelta(days=30)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            return _fmt(start), _fmt(now)
+        else:
+            # current_cycle / 未知值，默认取最近 30 天
+            start = (now - timedelta(days=30)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            return _fmt(start), _fmt(now)
+
     def get_usage_rank(
         self,
         team_id: str,
@@ -228,11 +288,13 @@ class TokenHubClient:
         Args:
             team_id: 套餐 ID
             dimension: 维度，取值: apikey / model / endpoint
-            period: 时间范围
+            period: 时间范围，取值: current_cycle / today / yesterday / last_7_days / last_30_days
 
         Returns:
             TopList 列表，每项包含 Key、Name、Stats 等
         """
+        start_time, end_time = self._resolve_time_range(period)
+
         all_items: List[Dict[str, Any]] = []
         offset = 0
         limit = 100
@@ -241,7 +303,8 @@ class TokenHubClient:
             data = self.describe_usage_rank_list(
                 team_id=team_id,
                 dimension=dimension,
-                period=period,
+                start_time=start_time,
+                end_time=end_time,
                 limit=limit,
                 offset=offset,
             )
@@ -256,7 +319,7 @@ class TokenHubClient:
             offset += limit
 
         logger.info(
-            "套餐 %s 的 %s 维度用量排行: 共 %d 条",
-            team_id, dimension, len(all_items),
+            "套餐 %s 的 %s 维度用量排行(%s~%s): 共 %d 条",
+            team_id, dimension, start_time, end_time, len(all_items),
         )
         return all_items
