@@ -11,7 +11,15 @@ tencent_cloud:
 
 # 企业微信群机器人 Webhook
 # 获取方式：企微群 → 右上角群设置 → 群机器人 → 添加机器人 → 复制 Webhook 地址
+# 告警关闭时（alert.enabled=false）可不配置
 wecom_webhook: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-bot-key"
+
+# 告警配置
+alert:
+  # 是否启用企微告警通知
+  # true  - 通过企业微信群机器人发送告警（需配置 wecom_webhook）
+  # false - 关闭告警，仅暴露 Prometheus 指标，由 Alertmanager 负责告警
+  enabled: true
 
 # 监控阈值配置（按使用率百分比，从高到低匹配）
 # 当套餐额度使用率达到对应阈值时触发告警

@@ -16,9 +16,10 @@
 - 支持告警冷却机制，避免同一套餐同一级别重复告警
 - 额度耗尽（EXHAUSTED）套餐单独告警
 - 企业微信群机器人 Markdown 格式告警，信息丰富直观
+- 告警开关可配置，关闭后仅暴露 Prometheus 指标，由 Alertmanager 负责告警
 - 支持 cron 表达式和 interval 两种定时调度方式
 - 支持单次执行模式和测试告警模式
-- 暴露 Prometheus metrics 指标，便于集成监控大盘
+- 暴露 Prometheus metrics 指标，指标刷新与告警检测独立调度
 - 完善的日志记录（控制台 + 文件轮转）
 
 ## 项目结构
@@ -62,7 +63,15 @@ tencent_cloud:
 
 # 企业微信群机器人 Webhook
 # 获取方式：企微群 → 右上角群设置 → 群机器人 → 添加机器人 → 复制 Webhook 地址
+# 告警关闭时（alert.enabled=false）可不配置
 wecom_webhook: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=你的机器人key"
+
+# 告警配置
+alert:
+  # 是否启用企微告警通知
+  # true  - 通过企业微信群机器人发送告警（需配置 wecom_webhook）
+  # false - 关闭告警，仅暴露 Prometheus 指标，由 Alertmanager 负责告警
+  enabled: true
 ```
 
 ### 3. 运行

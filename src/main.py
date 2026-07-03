@@ -54,12 +54,15 @@ class TokenPlanMonitorApp:
             alert_on_exhausted=config.get("alert_on_exhausted", True),
         )
 
+        # 告警开关
+        self.alert_enabled = config.get("alert", {}).get("enabled", True)
+
         # 初始化告警冷却管理器
         self.cooldown_mgr = AlertCooldownManager(
             cooldown_minutes=config.get("alert_cooldown_minutes", 60)
         )
 
-        # 初始化企微机器人
+        # 初始化企微机器人（告警关闭时仍可用于异常通知）
         self.bot = WeComBot(webhook_url=config["wecom_webhook"])
 
         # 初始化 Prometheus 指标管理器
@@ -210,7 +213,9 @@ class TokenPlanMonitorApp:
                             plan_info.team_id, dimension, e,
                         )
 
-            if not alerts:
+            if not self.alert_enabled:
+                logger.info("告警检测已关闭，跳过告警发送")
+            elif not alerts:
                 logger.info("所有套餐额度使用正常，无需告警")
             else:
                 # 6. 过滤冷却期内的告警
@@ -257,20 +262,35 @@ class TokenPlanMonitorApp:
         scheduler = BlockingScheduler()
 
         # === 告警检测任务 ===
-        cron_expr = schedule_config.get("cron")
-        interval_minutes = schedule_config.get("interval_minutes")
+        if self.alert_enabled:
+            cron_expr = schedule_config.get("cron")
+            interval_minutes = schedule_config.get("interval_minutes")
 
-        if cron_expr:
-            # 解析 cron 表达式 "*/30 * * * *"
-            parts = cron_expr.split()
-            if len(parts) == 5:
-                trigger = CronTrigger(
-                    minute=parts[0],
-                    hour=parts[1],
-                    day=parts[2],
-                    month=parts[3],
-                    day_of_week=parts[4],
-                )
+            if cron_expr:
+                # 解析 cron 表达式 "*/30 * * * *"
+                parts = cron_expr.split()
+                if len(parts) == 5:
+                    trigger = CronTrigger(
+                        minute=parts[0],
+                        hour=parts[1],
+                        day=parts[2],
+                        month=parts[3],
+                        day_of_week=parts[4],
+                    )
+                    scheduler.add_job(
+                        self.run_check,
+                        trigger=trigger,
+                        id="token_plan_monitor",
+                        name="TokenPlan 额度监控",
+                        max_instances=1,
+                        misfire_grace_time=300,
+                    )
+                    logger.info("已配置告警检测 cron 定时任务: %s", cron_expr)
+                else:
+                    logger.error("cron 表达式格式错误: %s，应为 5 段格式", cron_expr)
+                    sys.exit(1)
+            elif interval_minutes:
+                trigger = IntervalTrigger(minutes=interval_minutes)
                 scheduler.add_job(
                     self.run_check,
                     trigger=trigger,
@@ -278,26 +298,14 @@ class TokenPlanMonitorApp:
                     name="TokenPlan 额度监控",
                     max_instances=1,
                     misfire_grace_time=300,
+                    next_run_time=None,  # 不立即执行，等待第一个间隔
                 )
-                logger.info("已配置告警检测 cron 定时任务: %s", cron_expr)
+                logger.info("已配置告警检测 interval 定时任务: 每 %d 分钟", interval_minutes)
             else:
-                logger.error("cron 表达式格式错误: %s，应为 5 段格式", cron_expr)
+                logger.error("未配置调度方式，请在 config.yaml 中设置 schedule.cron 或 schedule.interval_minutes")
                 sys.exit(1)
-        elif interval_minutes:
-            trigger = IntervalTrigger(minutes=interval_minutes)
-            scheduler.add_job(
-                self.run_check,
-                trigger=trigger,
-                id="token_plan_monitor",
-                name="TokenPlan 额度监控",
-                max_instances=1,
-                misfire_grace_time=300,
-                next_run_time=None,  # 不立即执行，等待第一个间隔
-            )
-            logger.info("已配置告警检测 interval 定时任务: 每 %d 分钟", interval_minutes)
         else:
-            logger.error("未配置调度方式，请在 config.yaml 中设置 schedule.cron 或 schedule.interval_minutes")
-            sys.exit(1)
+            logger.info("告警检测已关闭（alert.enabled=false），跳过告警检测任务")
 
         # === Metrics 指标更新任务（独立调度） ===
         metrics_config = self.config.get("metrics", {})
@@ -338,9 +346,13 @@ def load_config(config_path: str) -> Dict[str, Any]:
     if not tc.get("secret_key") or tc.get("secret_key") == "your-secret-key":
         logger.error("请在配置文件中设置 tencent_cloud.secret_key")
         sys.exit(1)
-    if not config.get("wecom_webhook") or "your-bot-key" in config.get("wecom_webhook", ""):
-        logger.error("请在配置文件中设置 wecom_webhook")
-        sys.exit(1)
+
+    # 告警开启时校验 webhook 配置
+    alert_enabled = config.get("alert", {}).get("enabled", True)
+    if alert_enabled:
+        if not config.get("wecom_webhook") or "your-bot-key" in config.get("wecom_webhook", ""):
+            logger.error("请在配置文件中设置 wecom_webhook（或设置 alert.enabled=false 关闭告警）")
+            sys.exit(1)
 
     return config
 
