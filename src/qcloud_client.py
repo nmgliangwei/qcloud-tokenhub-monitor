@@ -161,7 +161,10 @@ class TokenHubClient:
         offset: int = 0,
     ) -> Dict[str, Any]:
         """
-        查询用量排行列表（按维度聚合的 Token 用量统计）
+        查询按量调用（后付费）用量排行列表
+
+        注意: 此接口返回的是按量调用后付费的 Token 用量统计，非 TokenPlan 套餐内用量。
+        套餐内用量通过 DescribeTokenPlan 的 TokenSummary 获取。
 
         Args:
             dimension: 统计维度，取值: apikey / model / endpoint
@@ -304,7 +307,9 @@ class TokenHubClient:
         period: str = "current_cycle",
     ) -> List[Dict[str, Any]]:
         """
-        获取指定维度的用量排行（全量返回）
+        获取按量调用用量排行（全量返回）
+
+        注意: 此接口返回的是按量调用后付费的 Token 用量统计，非 TokenPlan 套餐内用量。
 
         使用 ShowAll=true 一次性返回全量对象，不返回 Series 时序点。
         我们只需要 Stats 聚合值，不需要时序曲线。

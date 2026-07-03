@@ -187,7 +187,7 @@ schedule:
 |-----|------|
 | [DescribeTokenPlanList](https://cloud.tencent.com/document/api/1823/132269) | 查询套餐列表 |
 | [DescribeTokenPlan](https://cloud.tencent.com/document/api/1823/132270) | 查询套餐详情（含额度用量） |
-| [DescribeUsageRankList](https://cloud.tencent.com/document/api/1823/132279) | 查询用量排行（按 API Key/模型/接入点维度聚合） |
+| [DescribeUsageRankList](https://cloud.tencent.com/document/product/1823/132340) | 查询按量调用用量排行（按 API Key/模型/接入点维度聚合） |
 
 ### 关键数据结构
 
@@ -293,9 +293,11 @@ metrics:
 | `tokenhub_plan_api_key_count` | Gauge | 已创建 API Key 数量 | team_id, name |
 | `tokenhub_plan_api_key_max` | Gauge | API Key 上限 | team_id, name |
 
-#### 按维度聚合的 Token 用量指标（DescribeUsageRankList）
+#### 按量调用用量指标（DescribeUsageRankList）
 
-按 `apikey` / `model` / `endpoint` 维度聚合的 Token 用量，可通过配置 `metrics.usage_dimensions` 选择启用的维度。
+按 `apikey` / `model` / `endpoint` 维度聚合的**按量调用（后付费）** Token 用量统计，非 TokenPlan 套餐内用量。套餐内用量已通过 `tokenhub_plan_token_*` 系列指标暴露。可通过配置 `metrics.usage_dimensions` 选择启用的维度。
+
+> 注意：此数据为账户级别的按量调用统计，不区分套餐，指标中 `team_id="account"`、`plan_name="all"`。
 
 | 指标 | 类型 | 说明 | 标签 |
 |------|------|------|------|

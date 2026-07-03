@@ -199,7 +199,8 @@ class MetricsManager:
             registry=self.registry,
         )
 
-        # --- 按维度聚合的 Token 用量指标（DescribeUsageRankList） ---
+        # --- 按量调用（后付费）用量指标（DescribeUsageRankList） ---
+        # 注意: 此数据为按量调用后付费的用量统计，非 TokenPlan 套餐内用量
         # 维度: apikey / model / endpoint
         self.usage_input_token = Gauge(
             "tokenhub_usage_input_token",

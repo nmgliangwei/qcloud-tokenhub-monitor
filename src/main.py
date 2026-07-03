@@ -117,7 +117,7 @@ class TokenPlanMonitorApp:
             ]
             self.metrics.update_plan_metrics(plan_infos)
 
-            # 4. 获取按维度聚合的 Token 用量排行（账户级别，非按套餐）
+            # 4. 获取按量调用（后付费）用量排行（账户级别，非套餐内用量）
             for dimension in self.usage_dimensions:
                 try:
                     rank_items = self.client.get_usage_rank(
@@ -188,7 +188,7 @@ class TokenPlanMonitorApp:
             ]
             self.metrics.update_plan_metrics(plan_infos)
 
-            # 5. 获取按维度聚合的 Token 用量排行（账户级别，非按套餐）
+            # 5. 获取按量调用（后付费）用量排行（账户级别，非套餐内用量）
             for dimension in self.usage_dimensions:
                 try:
                     rank_items = self.client.get_usage_rank(

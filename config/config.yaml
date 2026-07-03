@@ -66,7 +66,9 @@ metrics:
   # 腾讯云 API 限制 20 次/秒，每个套餐每次刷新需调用 1 + len(usage_dimensions) 次 API
   # 建议不低于 3 分钟，默认 5 分钟
   refresh_interval_minutes: 5
-  # 用量排行维度，支持: apikey / model / endpoint
+  # 按量调用（后付费）用量排行维度，支持: apikey / model / endpoint
+  # 注意: 此数据为按量调用后付费的用量统计，非 TokenPlan 套餐内用量
+  # 套餐内用量已通过 tokenhub_plan_token_* 系列指标暴露
   # 每个维度会额外调用 DescribeUsageRankList API
   usage_dimensions: ["apikey", "model"]
   # 用量统计时间范围，支持以下格式:
